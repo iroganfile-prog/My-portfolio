@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1"> <!-- makes it responsive on phones -->
+  <title>Video Editor Portfolio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="nav" id="nav"><a class="logo" id="logo" href="#top"></a><nav class="links" id="links"></nav></header>
+
+<section class="hero" id="top">
+  <div class="in">
+    <div>
+      <p class="tag" id="tag"></p>
+      <h1 id="h1"></h1>
+      <p class="desc" id="desc"></p>
+      <div class="btns">
+        <button class="btn play" id="play">▶ Play</button>
+        <a class="btn info" id="more" href="#about">ⓘ More info</a>
+      </div>
+    </div>
+    <!-- Hologram: messages pop out of the phone -->
+    <div class="holo" aria-hidden="true"><div class="beam"></div><div class="phone"></div><div id="stack"></div></div>
+  </div>
+</section>
+
+<main id="main"></main>
+
+<dialog id="dlg">
+  <form method="dialog"><button aria-label="Close">×</button></form>
+  <div id="player"></div>
+  <div class="in2"><span class="chip" id="chip"></span><h3 id="dt"></h3><p id="dd"></p></div>
+</dialog>
+
+<script src="config.js"></script>
+<script src="common.js"></script>
+<script>
+  const s = SITE;
+  applyAccent(s);
+
+  // ---------- 1. Text from config.js ----------
+  document.title = s.siteName + " — Video Editor";
+  logo.textContent = s.siteName;
+  tag.textContent = s.tagline;
+  h1.textContent = s.heroTitle;
+  desc.textContent = s.heroDesc;
+  // The showreel loops silently behind the title. It can be a video file or a YouTube / Vimeo link.
+  if (s.reel) {
+    const r = parseVideo(s.reel);
+    document.getElementById("top").prepend(r
+      ? el("iframe", { className: "reel", src: r.bg, allow: "autoplay", tabIndex: -1, referrerPolicy: "strict-origin-when-cross-origin", title: "" })
+      : el("video", { className: "reel", src: s.reel, autoplay: true, muted: true, loop: true, playsInline: true }));
+  }
+
+  // ---------- 2. Hologram messages ----------
+  (function () {
+    const live = [];                       // newest message first
+    let n = 0;
+    const time = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    function push() {
+      const raw = s.messages[n++ % s.messages.length], mine = raw.startsWith(">");
+      const m = el("div", { className: "msg" + (mine ? " mine" : "") },
+        el("span", { textContent: mine ? raw.slice(1).trim() : raw }), el("small", { textContent: time() + (mine ? " ✓✓" : "") }));
+      m.style.setProperty("--side", mine ? 1 : -1);
+      live.unshift(m); stack.append(m);
+      live.forEach((x, i) => x.style.setProperty("--age", i));   // older messages float higher and fade
+      if (live.length > 4) live.pop().remove();
+    }
+    if (!s.messages.length) return;
+    if (matchMedia("(prefers-reduced-motion:reduce)").matches) { s.messages.slice(0, 4).forEach(push); return; }
+    push(); setInterval(push, 2300);
+  })();
+
+  // ---------- 3. Rows of videos ----------
+  const main = document.getElementById("main");
+
+  function makeMedia(p, i, tall) {
+    const hole = () => el("div", { className: "media ph", style: `--a:${135 + i * 35}deg`, textContent: "▶" });
+    const info = parseVideo(p.video || "");
+    let node;
+    if (p.thumb) { node = el("img", { className: "media", src: p.thumb, alt: "", loading: "lazy" }); node.onerror = () => node.replaceWith(hole()); return node; }
+    if (info) return info.thumb ? el("img", { className: "media" + (info.short && tall ? " zoom" : ""), src: info.thumb, alt: "", loading: "lazy" }) : hole();
+    if (!p.video) return hole();
+    node = el("video", { className: "media", src: p.video + "#t=0.5", preload: "metadata", muted: true, loop: true, playsInline: true });
+    node.onerror = () => node.replaceWith(hole());             // missing file -> red placeholder
+    return node;
+  }
+
+  function makeCard(p, i, rowTitle, tall) {
+    const media = makeMedia(p, i, tall);
+    const card = el("button", { className: "card", onclick: () => openVideo(p, rowTitle) }, media,
+      el("div", { className: "cap", textContent: p.title }));
+    card.onmouseenter = () => media.play && media.play().catch(() => {});   // preview on hover
+    card.onmouseleave = () => media.pause && media.pause();
+    return card;
+  }
+
+  s.rows.forEach(row => {
+    // Numbers are added automatically from the video order (1, 2, 3...). Old "top10" rows still work.
+    const numbered = row.numbers || row.layout === "top10";
+    const strip = el("div", { className: "strip l-" + (row.layout === "top10" ? "poster" : row.layout) }, row.projects.map((p, i) => {
+      const card = makeCard(p, i, row.title, row.layout !== "wide");
+      return numbered ? el("div", { className: "item" }, el("span", { className: "num", textContent: i + 1 }), card) : card;
+    }));
+    const scroll = d => strip.scrollBy({ left: d * strip.clientWidth * .8, behavior: "smooth" });
+    main.append(el("section", { className: "row", id: slug(row.title) }, el("h2", { textContent: row.title }),
+      el("div", { className: "rail" },
+        el("button", { className: "arrow l", textContent: "‹", ariaLabel: "Scroll left", onclick: () => scroll(-1) }), strip,
+        el("button", { className: "arrow r", textContent: "›", ariaLabel: "Scroll right", onclick: () => scroll(1) }))));
+  });
+
+  // ---------- 4. About + contact ----------
+  const socials = [["instagram", "Instagram"], ["youtube", "YouTube"], ["vimeo", "Vimeo"]].filter(([k]) => s[k])
+    .map(([k, t]) => el("a", { href: s[k], target: "_blank", rel: "noopener", textContent: t }));
+  main.append(
+    el("div", { className: "info", id: "about" },
+      el("div", {}, el("h2", { textContent: "About" }), el("p", { textContent: s.about }),
+        el("ul", { className: "svc", style: "margin-top:1.5rem" }, s.services.split("\n").filter(Boolean).map(x => el("li", { textContent: x })))),
+      el("div", { id: "contact" }, el("h2", { textContent: "Let’s work together" }),
+        el("a", { className: "mail", href: "mailto:" + s.email, textContent: s.email }), el("div", { className: "social" }, socials))),
+    el("footer", { textContent: "© " + new Date().getFullYear() + " " + s.siteName }));
+
+  // ---------- 5. Top menu ----------
+  [["#top", "Home"], ...s.rows.map(r => ["#" + slug(r.title), r.title]), ["#about", "About"], ["#contact", "Contact"]]
+    .forEach(([h, t]) => links.append(el("a", { href: h, textContent: t })));
+  addEventListener("scroll", () => nav.classList.toggle("solid", scrollY > 40), { passive: true });
+
+  // ---------- 6. Play button + pop-up player ----------
+  // Video file player. If the file can't be loaded, show a clear message instead of a blank player.
+  function makePlayer(p) {
+    const v = el("video", { src: p.video.trim(), controls: true, autoplay: true, playsInline: true });
+    v.addEventListener("error", () => player.append(el("p", { className: "err",
+      textContent: `Can't play "${p.video}". Check that the file is inside the videos folder with exactly this name, and that it is an MP4 with H.264 video.` })));
+    return v;
+  }
+
+  function openVideo(p, rowTitle) {
+    const info = parseVideo(p.video || "");
+    player.replaceChildren(...(info
+      ? [el("iframe", { className: info.short ? "vert" : "", src: info.embed, allow: "autoplay; fullscreen", allowFullscreen: true, referrerPolicy: "strict-origin-when-cross-origin" }),
+         el("a", { className: "ytlink", href: p.video, target: "_blank", rel: "noopener", textContent: "Not playing? Watch it on the original site ↗" })]
+      : [makePlayer(p)]));
+    chip.textContent = rowTitle; dt.textContent = p.title; dd.textContent = p.description;
+    dlg.showModal();
+  }
+  play.onclick = () => s.reel ? openVideo({ title: s.heroTitle, description: s.heroDesc, video: s.reel }, "Showreel")
+    : document.getElementById("main").scrollIntoView();
+  dlg.addEventListener("close", () => player.replaceChildren());                // stops the video
+  dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });   // click outside to close
+</script>
+</body>
+</html>
